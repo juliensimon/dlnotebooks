@@ -1,1 +1,1 @@
-Jupyter notebooks used in my articles: https://medium.com/@julsimon
+Jupyter and Zeppelin notebooks used in my articles: https://medium.com/@julsimon
