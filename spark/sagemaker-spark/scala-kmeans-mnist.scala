@@ -3,8 +3,9 @@
 # Train, deploy and invoke a standalone SageMaker model from Spark: MNIST (784) --> KMeans (10)
 
 import org.apache.spark.sql.SparkSession
-import com.amazonaws.services.sagemaker.sparksdk.IAMRole
+import com.amazonaws.services.sagemaker.sparksdk.{IAMRole,SageMakerResourceCleanup}
 import com.amazonaws.services.sagemaker.sparksdk.algorithms.KMeansSageMakerEstimator
+import com.amazonaws.services.sagemaker.AmazonSageMakerClientBuilder
 
 val spark = SparkSession.builder.getOrCreate
 
