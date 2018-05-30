@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 from __future__ import print_function
-import os, sys, json, traceback
+import os, sys, json, traceback, gzip
+import numpy as np
+
 import keras
 from keras.datasets import mnist
 from keras.models import Sequential, save_mxnet_model
@@ -11,30 +13,59 @@ from keras import backend as K
 
 from keras.utils import multi_gpu_model
 
+# SageMaker paths
 prefix      = '/opt/ml/'
 input_path  = prefix + 'input/data/'
 output_path = os.path.join(prefix, 'output')
 model_path  = os.path.join(prefix, 'model')
 param_path  = os.path.join(prefix, 'input/config/hyperparameters.json')
+data_path   = os.path.join(prefix, 'input/config/inputdataconfig.json')
 
+# Load MNIST data copied by SageMaker
+def load_data(input_path):
+    # Adapted from https://github.com/keras-team/keras/blob/master/keras/datasets/fashion_mnist.py
+
+    # Training and validation files
+    files = ['training/train-labels-idx1-ubyte.gz', 'training/train-images-idx3-ubyte.gz',
+             'validation/t10k-labels-idx1-ubyte.gz', 'validation/t10k-images-idx3-ubyte.gz']
+    # Load training labels
+    with gzip.open(input_path+files[0], 'rb') as lbpath:
+        y_train = np.frombuffer(lbpath.read(), np.uint8, offset=8)
+    # Load training samples
+    with gzip.open(input_path+files[1], 'rb') as imgpath:
+        x_train = np.frombuffer(imgpath.read(), np.uint8, offset=16).reshape(len(y_train), 28, 28)
+    # Load validation labels
+    with gzip.open(input_path+files[2], 'rb') as lbpath:
+        y_test = np.frombuffer(lbpath.read(), np.uint8, offset=8)
+    # Load validation samples
+    with gzip.open(input_path+files[3], 'rb') as imgpath:
+        x_test = np.frombuffer(imgpath.read(), np.uint8, offset=16).reshape(len(y_test), 28, 28)
+    print("Files loaded")
+    return (x_train, y_train), (x_test, y_test)
+
+# Main code
 try:
-    # Read in any hyperparameters that the user passed with the training job
+    # Read hyper parameters passed by SageMaker
     with open(param_path, 'r') as params:
-        trainingParams = json.load(params)
-    print(trainingParams)
+        hyperParams = json.load(params)
+    print("Hyper parameters: " + str(hyperParams))
     
-    lr = float(trainingParams.get('lr', '0.1'))
-    batch_size = int(trainingParams.get('batch_size', '128'))
-    epochs = int(trainingParams.get('epochs', '10'))
-    gpu_count = int(trainingParams.get('gpu_count', '0'))
+    lr = float(hyperParams.get('lr', '0.1'))
+    batch_size = int(hyperParams.get('batch_size', '128'))
+    epochs = int(hyperParams.get('epochs', '10'))
+    gpu_count = int(hyperParams.get('gpu_count', '0'))
                
-    num_classes = 10
+    # Read input data config passed by SageMaker
+    with open(data_path, 'r') as params:
+        inputParams = json.load(params)
+    print("Input parameters: " + str(inputParams))
 
+    num_classes = 10
     # input image dimensions
     img_rows, img_cols = 28, 28
 
     # the data, split between train and test sets
-    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    (x_train, y_train), (x_test, y_test) = load_data(input_path)
 
     if K.image_data_format() == 'channels_first':
         x_train = x_train.reshape(x_train.shape[0], 1, img_rows, img_cols)
