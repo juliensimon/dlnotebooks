@@ -1,0 +1,4 @@
+{
+    "epsilon": 1e-07, 
+    "floatx": "float32", 
+}
