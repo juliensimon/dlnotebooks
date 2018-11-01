@@ -1,0 +1,20 @@
+FROM nvidia/cuda:9.0-cudnn7-runtime
+
+RUN apt-get update && \
+    apt-get -y install python-dev python3-dev python3-pip wget curl
+
+RUN pip3 install tensorflow-gpu && \
+    pip3 install keras && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -rf /root/.cache
+    
+COPY mnist_cnn.py /opt/program/train
+RUN chmod +x /opt/program/train
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda-9.0/lib64:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu"
+    
+ENV PATH="/opt/program:${PATH}"
+
+WORKDIR /opt/program
