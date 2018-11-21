@@ -7,11 +7,11 @@ import numpy as np
 import keras
 from keras.datasets import mnist
 from keras.models import Sequential
-from keras.layers import Dense, Dropout, Flatten, BatchNormalization
-from keras.layers import Conv2D, MaxPooling2D
-from keras import backend as K
-
+from keras.layers import Activation, Dense, Dropout, Flatten, BatchNormalization, Conv2D, MaxPooling2D
+from keras.callbacks import Callback, EarlyStopping, ModelCheckpoint
+from keras.preprocessing.image import ImageDataGenerator
 from keras.utils import multi_gpu_model
+import keras.backend as K
 
 # SageMaker paths
 prefix      = '/opt/ml/'
@@ -50,28 +50,33 @@ try:
         hyperParams = json.load(params)
     print("Hyper parameters: " + str(hyperParams))
     
-    lr = float(hyperParams.get('lr', '0.001'))
-    batch_size = int(hyperParams.get('batch_size', '128'))
-    epochs = int(hyperParams.get('epochs', '10'))
-    gpu_count = int(hyperParams.get('gpu_count', '0'))
+    lr          = float(hyperParams.get('lr', '0.1'))
+    batch_size  = int(hyperParams.get('batch_size', '128'))
+    epochs      = int(hyperParams.get('epochs', '10'))
+    gpu_count   = int(hyperParams.get('gpu_count', '0'))
 
-    filter1 = int(hyperParams.get('filter1', '64'))
-    filter2 = int(hyperParams.get('filter2', '64'))
-    dropout1 = float(hyperParams.get('dropout1', '0.3'))
-    dropout2 = float(hyperParams.get('dropout2', '0.3'))
-
+    batch_norm  = int(hyperParams.get('batch_norm', '1'))
+    filters1    = int(hyperParams.get('filters1', '64'))
+    filters2    = int(hyperParams.get('filters2', '64'))
+    fc1         = int(hyperParams.get('fc1', '256'))
+    fc2         = int(hyperParams.get('fc2', '64'))
+    dropout1    = float(hyperParams.get('dropout1', '0.2'))
+    dropout2    = float(hyperParams.get('dropout2', '0.2'))
+    dropout_fc1 = float(hyperParams.get('dropout_fc1', '0.2'))
+    dropout_fc2 = float(hyperParams.get('dropout_fc2', '0.2'))
+    
     # Read input data config passed by SageMaker
     with open(data_path, 'r') as params:
         inputParams = json.load(params)
     print("Input parameters: " + str(inputParams))
 
-    num_classes = 10
     # input image dimensions
     img_rows, img_cols = 28, 28
 
-    # the data, split between train and test sets
+    # Split data between train and test sets
     (x_train, y_train), (x_test, y_test) = load_data(input_path)
 
+    # Depending on backend, put channels first (TF) or last (MXNet)
     if K.image_data_format() == 'channels_first':
         x_train = x_train.reshape(x_train.shape[0], 1, img_rows, img_cols)
         x_test = x_test.reshape(x_test.shape[0], 1, img_rows, img_cols)
@@ -81,65 +86,112 @@ try:
         x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
         input_shape = (img_rows, img_cols, 1)
 
+    print('x_train shape:', x_train.shape)
+    print(x_train.shape[0], 'train samples')
+    print(x_test.shape[0], 'test samples')
+    
+    # Normalize pixel values
     x_train = x_train.astype('float32')
     x_test = x_test.astype('float32')
     x_train /= 255
     x_test /= 255
-    print('x_train shape:', x_train.shape)
-    print(x_train.shape[0], 'train samples')
-    print(x_test.shape[0], 'test samples')
-
-    # convert class vectors to binary class matrices
+    
+    # Convert class vectors to binary class matrices
+    num_classes = 10
     y_train = keras.utils.to_categorical(y_train, num_classes)
-    y_test = keras.utils.to_categorical(y_test, num_classes)
-
+    y_test  = keras.utils.to_categorical(y_test, num_classes)
+    
+    # Build model    
     model = Sequential()
     
-    model.add(Conv2D(filter1, kernel_size=(3, 3), 
-                     padding='same',
-                     activation='relu',
-                     input_shape=input_shape))
-    model.add(BatchNormalization())
-    model.add(MaxPooling2D(pool_size=(2, 2), strides=2))
+    # 1st convolution block
+    model.add(Conv2D(filters1, kernel_size=(3,3), padding='same', input_shape=input_shape))
+    if batch_norm == 1:
+        model.add(BatchNormalization())
+    model.add(Activation('relu'))
+    model.add(MaxPooling2D(pool_size=(2,2), strides=2))
     model.add(Dropout(dropout1))
-
-    model.add(Conv2D(filter2, (3, 3),
-                     padding='same',
-                     activation='relu'))
-    model.add(BatchNormalization())
-    model.add(MaxPooling2D(pool_size=(2, 2), strides=2))
+    
+    # 2nd convolution block
+    model.add(Conv2D(filters2, kernel_size=(3,3), padding='valid'))
+    if batch_norm == 1:
+        model.add(BatchNormalization())
+    model.add(Activation('relu'))
+    model.add(MaxPooling2D(pool_size=(2,2), strides=2))
     model.add(Dropout(dropout2))
 
+    # 1st fully connected block
     model.add(Flatten())
-    model.add(Dense(256, activation='relu'))
-    model.add(BatchNormalization())
-    
-    model.add(Dense(64, activation='relu'))
-    model.add(BatchNormalization())
+    model.add(Dense(fc1))
+    if batch_norm == 1:
+        model.add(BatchNormalization())
+    model.add(Activation('relu'))
+    model.add(Dropout(dropout_fc1))
+
+    # 2nd fully connected block
+    model.add(Dense(fc2))
+    if batch_norm == 1:
+        model.add(BatchNormalization())
+    model.add(Activation('relu'))
+    model.add(Dropout(dropout_fc2))
+
+    # Output layer
     model.add(Dense(num_classes, activation='softmax'))
     
     print(model.summary())
 
     if gpu_count > 1:
         model = multi_gpu_model(model, gpus=gpu_count)
-        
+    
+    #sgd = SGD(lr=lr, decay=1e-6, momentum=0.9, nesterov=True)
     model.compile(loss=keras.losses.categorical_crossentropy,
                   optimizer=keras.optimizers.Adam(),
                   metrics=['accuracy'])
 
-    model.fit(x_train, y_train,
-              batch_size=batch_size,
-              epochs=epochs,
-              verbose=1,
-              validation_data=(x_test, y_test))
-    score = model.evaluate(x_test, y_test, verbose=0)
+    # Define callback for early stopping
+    early_stopping = EarlyStopping(monitor='val_acc',
+                              min_delta=0,
+                              patience=30,
+                              verbose=1, mode='auto')
     
-    print('Test loss:', score[0])
-    print('Test accuracy:', score[1])
+    # Define custom callback to log best validation accuracy
+    # This is needed for HPO to grab the metric in the training log
+    class LogBestValAcc(Callback):
+        def on_train_begin(self, logs={}):
+            self.val_acc = []
+        def on_train_end(self, logs={}):
+            print("Best val_acc:", max(self.val_acc))
+        def on_epoch_end(self, batch, logs={}):
+            self.val_acc.append(logs.get('val_acc'))
+            
+    best_val_acc = LogBestValAcc()
     
-    model_name='mnist-cnn-'+str(epochs)
-    model.save(model_path+'/'+model_name+'.hd5') # Keras model
-    print("Saved Keras model")
+    # Define callback to save best epoch
+    checkpointer = ModelCheckpoint(filepath=model_path+'/'+'mnist-cnn.hd5',
+                                   monitor='val_acc', verbose=1, save_best_only=True)
+    
+    datagen = ImageDataGenerator(
+     rotation_range=20,
+     width_shift_range=0.2,
+     height_shift_range=0.2,
+     horizontal_flip=True)
+
+    # compute quantities required for featurewise normalization
+    # std, mean, and principal components if ZCA whitening is applied)
+    datagen.fit(x_train)
+    
+    model.fit_generator(datagen.flow(x_train, y_train, batch_size=batch_size),
+                    validation_data=(x_test, y_test), 
+                    epochs=epochs,
+                    steps_per_epoch=len(x_train) / batch_size,
+                    callbacks=[early_stopping, best_val_acc, checkpointer],
+                    verbose=1)
+    
+    model.fit(x=x_train, y=y_train, batch_size=batch_size, 
+              validation_data=(x_test, y_test), epochs=epochs,
+              callbacks=[early_stopping, best_val_acc, checkpointer],verbose=1)
+    
+    print("Saved Keras model to %s" % (model_path+'/'+'mnist-cnn.hd5'))
 
     sys.exit(0)
 except Exception as e:
