@@ -41,7 +41,6 @@ if __name__ == '__main__':
     img_rows, img_cols = 28, 28
 
     # MXNet needs image channels first, e.g. (batch size, channels, width, height)
-    K.set_image_data_format('channels_first')  
     print(K.image_data_format())
 
     if K.image_data_format() == 'channels_first':
