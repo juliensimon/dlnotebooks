@@ -1,0 +1,7 @@
+
+Extensive experiments demonstrate that ELMo representations work extremely well in practice.
+We first show that they can be easily added to existing models for six diverse and challenging language understanding problems, including textual entailment, question answering and sentiment analysis.
+The addition of ELMo representations alone significantly improves the state of the art in every case, including up to 20% relative error reductions.
+For tasks where direct comparisons are possible, ELMo outperforms CoVe (McCann et al., 2017), which computes contextualized representations using a neural machine translation encoder.
+Finally, an analysis of both ELMo and CoVe reveals that deep representations outperform those derived from just the top layer of an LSTM.
+Our trained models and code are publicly available, and we expect that ELMo will provide similar gains for many other NLP problems.
